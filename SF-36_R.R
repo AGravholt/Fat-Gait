@@ -1,0 +1,602 @@
+setwd("C:/Users/gra09318/Documents/Universite Jean Monnet/FATGAIT/Questionnaires/SF-36")
+---
+      title: "Scoring the SF-36"
+author: "Dom Grisafe"
+date: "12/11/2018"
+output: html_document
+---
+      
+      ```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#R packages
+library(readxl)
+library(dplyr)
+library(stringr)
+library(tidyverse)
+library(xlsx)
+library(cowplot)
+library(scales)
+```
+
+# import from excel to R using readxl
+data <- read_excel("SF-36_july.xlsx")
+data
+# save a record of the original data for reference
+data_orig <- data
+
+#rename the columns
+cols <- c("timestamp", "ptid", "intid", paste0("I", 1:36))
+colnames(data) <- cols
+#save dataset with I1:I36 variables as strings
+data_str <- data
+
+#recode answers to numerics
+##get the first character digit in each string (the number score value)
+data_1str <- sapply(X = data[,4:39], FUN = substr, start = 1, stop = 1)
+
+##make new data frame where SF-36 scores are numeric (not factor)
+data <- cbind(data_str[,1:3], data.frame(data_1str, stringsAsFactors = TRUE))
+data <- as.data.frame(lapply(data, function(x) {
+      if(is.factor(x)) as.numeric(as.character(x)) else x
+}))
+
+##convert data to tible
+data <- tibble::as_tibble(data)
+
+# sort by ptid
+data <- data %>% arrange(ptid)
+
+data_1num <- mutate_all(.tbl = data_1str, .vars = 4:39, function(x) as.numeric())
+
+#score from Ron Hays instructions
+#*****************************************************************; 
+
+##Assign arrays for recoding each item in approptiate direction and converting to 0 to 100 scale
+IDINFO  <- select(data, timestamp, ptid, intid)
+RFIVEPT <- select(data, ptid,  I1,  I2, I20, I22, I34,  I36)
+THREEPT <- select(data, ptid,  I3,  I4,  I5,  I6,  I7,   I8,  I9, I10, I11, I12)
+TWOPT   <- select(data, ptid, I13, I14, I15, I16, I17,  I18, I19)
+RSIXPT  <- select(data, ptid, I21, I23, I26, I27, I30)
+SIXPT   <- select(data, ptid, I24, I25, I28, I29, I31)
+FIVEPT  <- select(data, ptid, I32, I33, I35)
+
+#*****************************************************************;
+
+##sf items (recoded in next section below)
+I1SF  <- select(data, ptid, I1)
+I21SF <- select(data, ptid, I21)
+I22SF <- select(data, ptid, I22)
+
+##recode, reverse 5-point items to 0-100 scale
+RFIVEPT[,2:7] <- sapply(X = RFIVEPT[,2:7], FUN = function(x) {
+      x[x == 1] <- 100
+      x[x == 2] <- 75
+      x[x == 3] <- 50
+      x[x == 4] <- 25
+      x[x == 5] <- 0
+      x
+})
+
+##recode 3-point items to 0-100 scale
+THREEPT[,2:11] <- sapply(X = THREEPT[,2:11], FUN = function(x) {
+      x[x == 1] <- 0
+      x[x == 2] <- 50
+      x[x == 3] <- 100
+      x
+})
+
+##recode 2-point items to 0-100 scale
+TWOPT[,2:8] <- sapply(X = TWOPT[,2:8], FUN = function(x) {
+      x[x == 1] <- 0
+      x[x == 2] <- 100
+      x
+})
+
+##recode, reverse 6-point items to 0-100 scale
+RSIXPT[,2:6] <- sapply(X = RSIXPT[,2:6], FUN = function(x) {
+      x[x == 1] <- 100
+      x[x == 2] <- 80
+      x[x == 3] <- 60
+      x[x == 4] <- 40
+      x[x == 5] <- 20
+      x[x == 6] <- 0
+      x
+})
+
+##recode 6-point items to 0-100 scale
+SIXPT[,2:6] <- sapply(X = SIXPT[,2:6], FUN = function(x) {
+      x[x == 1] <- 0
+      x[x == 2] <- 20
+      x[x == 3] <- 40
+      x[x == 4] <- 60
+      x[x == 5] <- 80
+      x[x == 6] <- 100
+      x
+})
+
+##recode 5-point items to 0-100 scale
+FIVEPT[,2:4] <- sapply(X = FIVEPT[,2:4], FUN = function(x) {
+      x[x == 1] <- 0
+      x[x == 2] <- 25
+      x[x == 3] <- 50
+      x[x == 4] <- 75
+      x[x == 5] <- 100
+      x
+})
+
+#*****************************************************************;
+
+##recode sf items to 0-100 scale
+
+##original SF item scores
+before <- I1SF %>%
+      inner_join(I21SF, by = "ptid") %>%
+      inner_join(I22SF, by = "ptid")
+
+###recode item 1 to 0-100 scale
+
+####initialize new column for scaled values
+I1SF$I1SF <- NA
+
+####recode scores
+I1SF$I1SF[I1SF$I1 == 1] <- 5.0
+I1SF$I1SF[I1SF$I1 == 2] <- 4.4
+I1SF$I1SF[I1SF$I1 == 3] <- 3.4
+I1SF$I1SF[I1SF$I1 == 4] <- 2.0
+I1SF$I1SF[I1SF$I1 == 5] <- 1.0
+
+#scale
+I1SF$I1SF <- (I1SF$I1SF - 1) * 25
+
+
+###recode item 22 to 0-100 scale, depending on value of item 21
+
+#####note: use single ampersand so each row is tested (vectorized), not just the first element
+
+for (row in 1:nrow(before)) {
+      
+      if (!is.na(before$I21[row]) && !is.na(before$I22[row])) {
+            #####if no missing values for item 21 and 22, item 22 has 6 levels for 0-100 score
+            
+            I22SF$I22[before$I22 == 1 &  before$I21 == 1] <- 6
+            I22SF$I22[before$I22 == 1 & (before$I21 > 1 & before$I21 < 7)] <- 5
+            I22SF$I22[before$I22 == 2 & (before$I21 > 0 & before$I21 < 7)] <- 4
+            I22SF$I22[before$I22 == 3 & (before$I21 > 0 & before$I21 < 7)] <- 3
+            I22SF$I22[before$I22 == 4 & (before$I21 > 0 & before$I21 < 7)] <- 2
+            I22SF$I22[before$I22 == 5 & (before$I21 > 0 & before$I21 < 7)] <- 1
+            
+      } else if (is.na(before$I21[row]) && !is.na(before$I22[row])) {
+            #####if missing values for item 21, but not item 22, item 22 has 5 levels for 0-100 score
+            
+            I22SF$I22[before$I22 == 1] <- 6.0
+            I22SF$I22[before$I22 == 2] <- 4.75
+            I22SF$I22[before$I22 == 3] <- 3.5
+            I22SF$I22[before$I22 == 4] <- 2.25
+            I22SF$I22[before$I22 == 5] <- 1.0
+            
+      }
+}
+
+#scale
+I22SF$I22SF <- (I22SF$I22 - 1) * 20
+
+
+###recode item 21 to 0-100 scale
+I21SF$I21[before$I21 == 1] <- 6.0
+I21SF$I21[before$I21 == 2] <- 5.4
+I21SF$I21[before$I21 == 3] <- 4.2
+I21SF$I21[before$I21 == 4] <- 3.1
+I21SF$I21[before$I21 == 5] <- 2.2
+I21SF$I21[before$I21 == 6] <- 1.0
+
+#scale
+I21SF$I21SF <- (I21SF$I21 - 1) * 20
+
+#drop unscaled scores
+I1SF$I1   <- NULL
+I22SF$I22 <- NULL
+I21SF$I21 <- NULL
+
+
+#get 8 scales, physical and mental subscales
+#*****************************************************************;
+
+#put all the scaled items together
+data0100 <- IDINFO %>%
+      inner_join(RFIVEPT, by = "ptid") %>% 
+      inner_join(THREEPT, by = "ptid") %>% 
+      inner_join(TWOPT,   by = "ptid") %>% 
+      inner_join(RSIXPT,  by = "ptid") %>% 
+      inner_join(SIXPT,   by = "ptid") %>% 
+      inner_join(FIVEPT,  by = "ptid") %>% 
+      inner_join(I1SF,    by = "ptid") %>% 
+      inner_join(I21SF,   by = "ptid") %>% 
+      inner_join(I22SF,   by = "ptid") 
+
+#calculate scales by taking means of select 0-100 scaled items
+# 8 SF-36 scale scores
+
+## Physical Health
+# Physical functioning, 10 items:	3 4 5 6 7 8 9 10 11 12
+# Role limitations due to physical health,	4 items:	13 14 15 16
+# Pain,	2 items:	21 22
+# General health,	5 items:	1 33 34 35 36
+
+## Mental Health
+# Energy/fatigue/vitality,	4 items:	23 27 29 31
+# Social functioning,	2	items: 20 32
+# Role limitations due to emotional problems,	3 items:	17 18 19
+# Emotional well-being,	5	items: 24 25 26 28 30
+
+# SF-36 physical and mental health composite scores
+data0100 <- mutate(data0100, 
+                   
+                   ##Physical Composite Scale
+                   
+                   # Physical functioning, 10 items:	3 4 5 6 7 8 9 10 11 12
+                   PHYFUN10 = rowMeans(select(data0100,I3,I4,I5,I6,I7,I8,I9,I10,I11,I12),na.rm = TRUE),
+                   
+                   # Role limitations due to physical health,	4 items:	13 14 15 16
+                   ROLEP4 = rowMeans(select(data0100,I13,I14,I15,I16),na.rm = TRUE),
+                   
+                   # Pain,	2 items:	21 22
+                   PAIN2 = rowMeans(select(data0100,I21,I22),na.rm = TRUE),
+                   SFPAIN = rowMeans(select(data0100,I21SF,I22SF),na.rm = TRUE),
+                   
+                   # General health,	5 items:	1 33 34 35 36
+                   GENH5 = rowMeans(select(data0100,I1,I33,I34,I35,I36),na.rm = TRUE),
+                   SFGENH5 = rowMeans(select(data0100,I1SF,I33,I34,I35,I36),na.rm = TRUE),
+                   
+                   ##Mental Composite Scale
+                   
+                   # Energy/fatigue,	4 items:	23 27 29 31
+                   ENFAT4 = rowMeans(select(data0100,I23,I27,I29,I31),na.rm = TRUE),
+                   
+                   # Social functioning,	2	items: 20 32
+                   SOCFUN2 = rowMeans(select(data0100,I20,I32),na.rm = TRUE),
+                   
+                   # Role limitations due to emotional problems,	3 items:	17 18 19
+                   ROLEE3 = rowMeans(select(data0100,I17,I18,I19),na.rm = TRUE),
+                   
+                   # Emotional well-being,	5	items: 24 25 26 28 30
+                   EMOT5 = rowMeans(select(data0100,I24,I25,I26,I28,I30),na.rm = TRUE)
+)
+```
+
+
+## SF-36 8 Subscale Scores
+naming vectors, used later
+
+ make vectors of scale names, abbreviations, number of items per subscale, and subscale weights
+SF36_scales <- c("Physical Functioning", "Role Physical", "Bodily Pain", "General Health", "Vitality", "Social Functioning", "Role Emotional", "Mental Health")
+ vector scale names containing all scales and composites names
+scaleCompNames <- c(SF36_scales, "Physical Composite Score","Mental Composite Score")
+
+SF36_abbrev <- c("PF", "RP", "BP", "GH", "VT", "SF", "RE", "MH")
+SF36_abbrev_std <- c("stdPF", "stdRP", "stdBP", "stdGH", "stdVT", "stdSF", "stdRE", "stdMH")
+
+SF36_nItems <- c(10,    4,    2,    5,    4,    2,    3,    5)
+SF36_weight <- c(10/21, 4/21, 2/21, 5/21, 4/14, 2/14, 3/14, 5/14)
+  
+select 8 SF-36 subscale scores
+subScale8 <- select(data0100, ptid,
+                    PHYFUN10,ROLEP4,PAIN2,GENH5,
+                    ENFAT4,SOCFUN2,ROLEE3,EMOT5)
+sumScale8 <- summarize(subScale8, 
+          meanPF = mean(PHYFUN10), sdPF = sd(PHYFUN10), sePF = sd(PHYFUN10)/sqrt(n()),
+          meanRP = mean(ROLEP4), sdRP = sd(ROLEP4), seRP = sd(ROLEP4)/sqrt(n()),
+          meanBP = mean(PAIN2), sdBP = sd(PAIN2), seBP = sd(PAIN2)/sqrt(n()),
+          meanGH = mean(GENH5), sdGH = sd(GENH5), seGH = sd(GENH5)/sqrt(n()),
+          meanVT = mean(ENFAT4), sdVT = sd(ENFAT4), seVT = sd(ENFAT4)/sqrt(n()),
+          meanSF = mean(SOCFUN2), sdSF = sd(SOCFUN2), seSF = sd(SOCFUN2)/sqrt(n()),
+          meanRE = mean(ROLEE3), sdRE = sd(ROLEE3), seRE = sd(ROLEE3)/sqrt(n()),
+          meanMH = mean(EMOT5), sdMH = sd(EMOT5), seMH = sd(EMOT5)/sqrt(n())
+          )
+
+# set subscale column names to abbreviations
+colnames(subScale8) <- c("ptid", SF36_scales)
+writexl::write_xlsx(subScale8,"SF_Scored.xlsx")
+colnames(subScale8) <- c("ptid", SF36_abbrev)
+# make this into a tibble of each subscale (rows) by statistics mean and sd. Figure out naming
+finalTable <- as.numeric(sumScale8[1,]) %>% 
+  matrix(ncol = 3, nrow = 8, byrow = T) %>% 
+  as_tibble()
+
+# add scale names
+finalTable <- finalTable %>% 
+  add_column(SF36_scales)
+
+# add scale abbreviations
+finalTable <- finalTable %>% 
+  add_column(SF36_abbrev)
+
+# add scale weights
+finalTable <- finalTable %>% 
+  add_column(SF36_weight)
+
+# name columns and reorder columns
+colnames(finalTable) <- c("mean", "stdDev", "stdErr", "Scale", "Abbreviation", "weight")
+
+# formatted final table
+finalTable <- finalTable %>% select(Scale, Abbreviation, weight, mean, stdErr, stdDev)
+
+
+# set precision on mean and standard deviation columns
+finalTable <- finalTable %>% 
+  mutate(
+    mean = round(mean, digits = 1),
+    stdDev = round(stdDev, digits = 1)
+  )
+  
+
+# print table in Rmd
+print("8 Subscale Scores of the SF-36, raw (i.e., not standardized)")
+finalTable
+```
+
+# Unnecesary, but comparing to the US population
+
+# import standard US general population scores of the SF-36
+ SF36_GenPopUS <- read_excel("SF36_GenPopUS.xlsx", sheet = 1)
+  
+ 
+## calculate standardized subscale scores for each participant
+std_subScale8 <- subScale8 %>% 
+  mutate(
+    # divide sample subscale score by the mean scale score from general US population and divide by std dev from general US population
+    stdPF = (PF - as.numeric(SF36_GenPopUS[1,3])) / as.numeric(SF36_GenPopUS[1,5]),
+    stdRP = (RP - as.numeric(SF36_GenPopUS[2,3])) / as.numeric(SF36_GenPopUS[2,5]),
+    stdBP = (BP - as.numeric(SF36_GenPopUS[3,3])) / as.numeric(SF36_GenPopUS[3,5]),
+    stdGH = (GH - as.numeric(SF36_GenPopUS[4,3])) / as.numeric(SF36_GenPopUS[4,5]),
+    stdVT = (VT - as.numeric(SF36_GenPopUS[5,3])) / as.numeric(SF36_GenPopUS[5,5]),
+    stdSF = (SF - as.numeric(SF36_GenPopUS[6,3])) / as.numeric(SF36_GenPopUS[6,5]),
+    stdRE = (RE - as.numeric(SF36_GenPopUS[7,3])) / as.numeric(SF36_GenPopUS[7,5]),
+    stdMH = (MH - as.numeric(SF36_GenPopUS[8,3])) / as.numeric(SF36_GenPopUS[8,5])
+    )
+
+## present summary statistics of standardized scores in tibble
+
+  # select 8 SF-36 subscale scores
+  std_subScale8 <- std_subScale8 %>% select(
+    ptid,
+    PF, RP, BP, GH, VT, SF, RE, MH,
+    stdPF,stdRP,stdBP,stdGH, stdVT,stdSF,stdRE,stdMH)
+  
+  #  get means and standard deviations of standardized subscales
+  std_sumScale8 <- summarize(std_subScale8, 
+            meanstdPF = mean(stdPF), sdstdPF = sd(stdPF), sestdPF = sd(stdPF)/sqrt(n()),
+            meanstdRP = mean(stdRP), sdstdRP = sd(stdRP), sestdRP = sd(stdRP)/sqrt(n()),
+            meanstdBP = mean(stdBP), sdstdBP = sd(stdBP), sestdBP = sd(stdBP)/sqrt(n()),
+            meanstdGH = mean(stdGH), sdstdGH = sd(stdGH), sestdGH = sd(stdGH)/sqrt(n()),
+            meanstdVT = mean(stdVT), sdstdVT = sd(stdVT), sestdVT = sd(stdVT)/sqrt(n()),
+            meanstdSF = mean(stdSF), sdstdSF = sd(stdSF), sestdSF = sd(stdSF)/sqrt(n()),
+            meanstdRE = mean(stdRE), sdstdRE = sd(stdRE), sestdRE = sd(stdRE)/sqrt(n()),
+            meanstdMH = mean(stdMH), sdstdMH = sd(stdMH), sestdMH = sd(stdMH)/sqrt(n())
+            )
+  
+  # make this into a tibble of each subscale (rows) by statistics mean and sd. Figure out naming
+  std_finalTable <- as.numeric(std_sumScale8[1,]) %>% 
+    matrix(ncol = 3, nrow = 8, byrow = T) %>% 
+    as_tibble()
+  
+  # add subscale names
+  std_finalTable <- std_finalTable %>% 
+    add_column(SF36_scales)
+  
+  # add subscale abbreviations
+  std_finalTable <- std_finalTable %>% 
+    add_column(SF36_abbrev_std)
+  
+  # add subscale weights
+  std_finalTable <- std_finalTable %>% 
+    add_column(SF36_weight)
+
+  # name columns and reorder columns
+  colnames(std_finalTable) <- c("mean", "stdDev", "stdErr", "Scale", "Abbreviation", "weight")
+  
+  # formatted final table
+  std_finalTable <- std_finalTable %>% select(Scale, Abbreviation, weight, mean, stdErr, stdDev)
+  
+  # set precision on mean and standard deviation columns
+  std_finalTable <- std_finalTable %>% 
+    mutate(
+      mean = round(mean, digits = 1),
+      stdDev = round(stdDev, digits = 1)
+    )
+
+  # print table in Rmd
+  print("8 subscales of the SF-36 Standardized to General US Population")
+  std_finalTable
+```
+
+## Calculating Standardized Component Scores: Physical and Mental Composites
+
+## Calculate Standardized Subscales, PCS, and MCS for each individual
+
+std_subScale8 <- std_subScale8 %>% 
+      mutate(
+            
+            #   The weights are the amount of items per subscale divided by all items (n = 21 for PCS; n = 14 for MCS)
+            PCS = (10/21*stdPF + 4/21*stdRP + 2/21*stdBP + 5/21*stdGH) * 10 + 50,
+            MCS = ( 4/14*stdVT + 2/14*stdSF + 3/14*stdRE + 5/14*stdMH) * 10 + 50
+            
+      )
+
+# calculate summary statistics for all participants
+tableCS <- std_subScale8 %>% summarize(
+      
+      # number of observations
+      
+      
+      # number of observations, non-standardized, original subscales scores
+      nPF = sum(!is.na(PF)), meanPF = mean(PF), sdPF = sd(PF), sePF = sd(PF)/sqrt(n()),
+      nRP = sum(!is.na(RP)), meanRP = mean(RP), sdRP = sd(RP), seRP = sd(RP)/sqrt(n()),
+      nBP = sum(!is.na(BP)), meanBP = mean(BP), sdBP = sd(BP), seBP = sd(BP)/sqrt(n()),
+      nGH = sum(!is.na(GH)), meanGH = mean(GH), sdGH = sd(GH), seGH = sd(GH)/sqrt(n()),
+      nVT = sum(!is.na(VT)), meanVT = mean(VT), sdVT = sd(VT), seVT = sd(VT)/sqrt(n()),
+      nSF = sum(!is.na(SF)), meanSF = mean(SF), sdSF = sd(SF), seSF = sd(SF)/sqrt(n()),
+      nRE = sum(!is.na(RE)), meanRE = mean(RE), sdRE = sd(RE), seRE = sd(RE)/sqrt(n()),
+      nMH = sum(!is.na(MH)), meanMH = mean(MH), sdMH = sd(MH), seMH = sd(MH)/sqrt(n()),
+      
+      # composite scores, standardized to general US population
+      nPCS = sum(!is.na(PCS)), meanPCS = mean(PCS), sdPCS = sd(PCS), sestdPCS = sd(PCS)/sqrt(n()),
+      nMCS = sum(!is.na(MCS)), meanMCS = mean(MCS), sdMCS = sd(MCS), sestdMCS = sd(MCS)/sqrt(n())
+      
+)
+
+tableCS <- as.numeric(tableCS[1,]) %>% 
+      matrix(ncol = 4, nrow = 10, byrow = T) %>% 
+      as_tibble()
+
+# add subscale labels
+tableCS <- tableCS %>% 
+      add_column("Scale" = c(
+            SF36_scales,
+            "Physical Composite Score", "Mental Composite Score"))
+
+# add subscale abbreviations
+tableCS <- tableCS %>% 
+      add_column("Abbreviation" = c(
+            SF36_abbrev,
+            "PCS", "MCS"))
+
+colnames(tableCS) <- c("n", "mean", "stdDev", "stdErr", "Scale", "Abbreviation")
+tableCS <- tableCS %>% 
+      select(Scale, n, Abbreviation, mean, stdErr, stdDev) %>% 
+      rename(Mean = mean, SE = stdErr, SD = stdDev)
+
+
+
+# set precision on mean and standard deviation columns
+tableCS <- tableCS %>% 
+      mutate(
+            Mean = round(Mean, digits = 1),
+            SD = round(SD, digits = 1)
+      )
+
+
+# print table in Rmd
+print("Physical and Mental Composite Scores of the SF-36 Standardized to General US Population")
+tableCS
+
+
+## get summary statistics of Sample and General US Population for plotting comparisons
+
+# sample SF-36 subscales
+sample_SF36 <- tableCS %>% 
+      add_column(Population = 0)
+
+# general US population SF-36 subscales
+genUS_SF36 <- SF36_GenPopUS %>% 
+      select(Scale, n, Mean, SE, SD) %>% 
+      rename(Abbreviation = Scale) %>% 
+      add_column(Scale = scaleCompNames) %>% 
+      select(Scale, n, Abbreviation, Mean, SE, SD) %>% 
+      add_column(Population = 1)
+
+# merge sample and general US population data of 8 subscales
+sampleUSCompare <- rbind(sample_SF36, genUS_SF36)
+
+# make Scale variable factor to conserve order
+sampleUSCompare$Scale <- sampleUSCompare$Scale %>% 
+      factor(ordered = TRUE, levels = scaleCompNames)
+
+# make Population variable factor to group by
+sampleUSCompare$Population <- factor(sampleUSCompare$Population, 
+                                     levels = c(0, 1),
+                                     labels = c("Sample", "General US")
+)
+```
+
+## Export the 8 Subscales, Standardized Subscales, and Composite Scores of the SF-36 to Excel
+An excel file will be produced enumerating the raw 8 scale scores as well as the PCS and MCS composite scores, standardized to the general US population.
+```{r}
+# export to excel
+sampleUSCompare %>% write.xlsx("!SF36_CompositeScores.xlsx", sheetName = "Mean Subscales & Composites")
+std_subScale8 %>% select(-starts_with("std")) %>% write.xlsx("!SF36_CompositeScores.xlsx", sheetName="Individual Data", append=TRUE)
+```
+
+
+## Distributions of Physical and Mental Composite Scores
+Look at the distributions of PCS and MCS in the sample.
+```{r echo = FALSE}
+
+# Use individual PCS and MCS scores to show the distribution of each composite
+
+# Physical composite score (PCS)
+std_subScale8 %>% ggplot(aes(x = PCS)) + 
+      geom_histogram(aes(y = ..count.. / sum(..count..)), binwidth = 2.5) +
+      scale_y_continuous(labels = percent_format(), limits = c(0,1)) +
+      scale_x_continuous(limits = c(0,100)) +
+      ggtitle("Physical Composite Scores of the SF-36") +
+      ylab("Percent of Total Participants") +
+      xlab("Physical Composite Score (PCS)")
+
+# Mental composite score (MCS)
+std_subScale8 %>% ggplot(aes(x = MCS)) + 
+      geom_histogram(aes(y = ..count.. / sum(..count..)), binwidth = 2.5) +
+      scale_y_continuous(labels = percent_format(), limits = c(0,1)) +
+      scale_x_continuous(limits = c(0,100)) +
+      ggtitle("Mental Composite Scores of the SF-36") +
+      ylab("Percent of Total Participants") +
+      xlab("Mental Composite Score (MCS)")
+```
+
+## Visually Compare the SF-36 of the Sample and General US Population
+Visualize the mean and standard deviation of the 8 subscales in the sample and compare to the [general US population](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3582698/).
+```{r echo = FALSE}
+# composite scores of SF-36
+sampleUSCompare %>% 
+      filter(Abbreviation %in% c("PCS", "MCS")) %>% 
+      ggplot(aes(x = Population, y = Mean, color = Population)) +
+      geom_errorbar(aes(ymin = Mean - SE, ymax = Mean + SE), width = .2) +
+      scale_y_continuous(limits = c(20,80)) +
+      geom_point() +
+      facet_wrap( ~ Scale, nrow = 1) +
+      theme(legend.position = "none") +
+      ggtitle("SF-36 Composite Scores of Sample Compared to US Population") +
+      ylab("Average Composite Score (SE Bars)") +
+      xlab("Population")
+
+# physical Subscales of SF-36
+sampleUSCompare %>% 
+      filter(Abbreviation %in% c("PF", "RP", "BP", "GH")) %>% 
+      ggplot(aes(x = Population, y = Mean, color = Population)) +
+      geom_errorbar(aes(ymin = Mean - SE, ymax = Mean + SE), width = .2) +
+      scale_y_continuous(limits = c(20,80)) +
+      geom_point() +
+      facet_wrap(Scale ~ ., nrow = 2) +
+      theme(legend.position ="none") +
+      ggtitle("SF-36 Physical Subscales of Sample Compared to US Population") +
+      ylab("Average Subscale Score (SE Bars)") +
+      xlab("Population")
+
+# mental Subscales of SF-36
+sampleUSCompare %>% 
+      filter(Abbreviation %in% c("VT", "SF", "RE", "MH")) %>% 
+      ggplot(aes(x = Population, y = Mean, color = Population)) +
+      geom_errorbar(aes(ymin = Mean - SE, ymax = Mean + SE), width = .2) +
+      scale_y_continuous(limits = c(20,80)) +
+      geom_point() +
+      facet_wrap(Scale ~ ., nrow = 2) +
+      theme(legend.position="none") +
+      ggtitle("SF-36 Mental Subscales of Sample Compared to US Population") +
+      ylab("Average Subscale Score (SE Bars)") +
+      xlab("Population")
+```
+
+
+
+#References
+[SF-36](https://www.rand.org/health/surveys_tools/mos/36-item-short-form/survey-instrument.html) by RAND  
+[Google Drive Folder](https://drive.google.com/drive/folders/1W7OvdZls7Y52vpiyQKPgF1YVjpXtSNPd?usp=sharing) containing SF-36 Form and Sheet Output  
+[Commentaries encouraging the use of Google Forms in health and social sciences](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3884902/)  
+[readxl](https://www.rdocumentation.org/packages/readxl/versions/0.1.1) package  
+SF-36 [Scoring Instructions](https://www.rand.org/health/surveys_tools/mos/36-item-short-form/scoring.html) by RAND  
+SF-36 Scoring Program in [SAS](https://www.rand.org/pubs/drafts/DRU1437.html) by Ron Hayes  
+SF-36 Scoring Program in [Word](https://cours.etsmtl.ca/gts813/documents/sf36_scoring_system.doc)  
+[Australian Longitudinal Study on Women's Health](https://www.alswh.org.au/)  
+[Calculating physical and mental composite scores of SF-36](http://www.alswh.org.au/images/content/pdf/InfoData/Data_Dictionary_Supplement/DDSSection2SF36.pdf)  
+[Standardize SF-36 scores to the general US population](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3582698/)  
+
